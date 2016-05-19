@@ -2,6 +2,7 @@
 # By Al Sweigart al@inventwithpython.com
 # http://inventwithpython.com/pygame
 # Released under a "Simplified BSD" license
+from typing import List
 
 import pygame
 import random
@@ -11,6 +12,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from pygame.locals import *
+
+from ExperienceTransition import ExperienceTransition
 
 FPS = 25
 BOXSIZE = 20
@@ -184,6 +187,17 @@ def main():
 
 
 def runGame():
+    # Initialization of Deep Q-Network-related variables
+    replayMemorySize = 100000
+    preprocessedSequences = np.zeros((4, 20, 20), dtype=np.bool)
+    replayMemory = [None] * replayMemorySize  # type: List[ExperienceTransition]
+    replayStartSize = replayMemorySize / 20
+    replays = 0
+    miniBatchSize = 32
+    nextPieceOffset = (10, 5)
+    prevState = np.zeros((20, 20))
+    currentState = np.zeros((20, 20))
+
     # setup variables for the start of the game
     board = getBlankBoard()
     lastMoveDownTime = time.time()
@@ -198,9 +212,22 @@ def runGame():
     fallingPiece = getNewPiece()
     nextPiece = getNewPiece()
 
+    def fillStateWith(piece, offset=(0, 0), value: bool=True) -> None:
+        """Adds a piece to the static board with the supplied offset."""
+        if piece is None:
+            return
+        (offsetX, offsetY) = offset
+        shapeToDraw = PIECES[piece['shape']][piece['rotation']]
+        for x in range(TEMPLATEWIDTH):
+            for y in range(TEMPLATEHEIGHT):
+                if shapeToDraw[y][x] != BLANK:
+                    currentState[offsetX + piece['x'] + x, offsetY + piece['y'] + y] = value
+
     while True:  # game loop
         if fallingPiece is None:
             # No falling piece in play, so start a new piece at the top
+            # Remove the old 'nextPiece' and make space for the new one in the feature array.
+            fillStateWith(nextPiece, nextPieceOffset, value=False)
             fallingPiece = nextPiece
             nextPiece = getNewPiece()
             lastFallTime = time.time()  # reset lastFallTime
@@ -269,23 +296,7 @@ def runGame():
                     fallingPiece['y'] += i - 1
 
                 elif event.key == K_j:
-                    arr = np.zeros((20, 20))
-                    for x in range(len(board)):
-                        for y in range(len(board[x])):
-                            arr[x, y] = board[x][y] != BLANK
-
-                    def drawPieceAt(piece, offset=(0, 0)):
-                        """Adds a piece to the static board with the supplied offset."""
-                        (offsetX, offsetY) = offset
-                        shapeToDraw = PIECES[piece['shape']][piece['rotation']]
-                        for x in range(TEMPLATEWIDTH):
-                            for y in range(TEMPLATEHEIGHT):
-                                if shapeToDraw[y][x] != BLANK:
-                                    arr[offsetX + piece['x'] + x, offsetY + piece['y'] + y] = True
-
-                    drawPieceAt(fallingPiece)
-                    drawPieceAt(nextPiece, (10, 5))
-                    plt.imshow(arr.T, cmap='Greys', interpolation='nearest')
+                    plt.imshow(currentState.T, cmap='Greys', interpolation='nearest')
                     # When matplotlib shows the window with the array, it crashes internally (at least on OS X).
                     # The windows are still opened but the game does not continue running.
                     plt.show()
@@ -322,8 +333,38 @@ def runGame():
         drawBoard(board)
         drawStatus(score, level)
         drawNextPiece(nextPiece)
+
+        # The board has (possibly) changed, recalculate the currentState
+        for x in range(len(board)):
+            for y in range(len(board[x])):
+                currentState[x, y] = board[x][y] != BLANK
+
         if fallingPiece is not None:
             drawPiece(fallingPiece)
+            fillStateWith(fallingPiece)
+
+        # Draw the new one 'nextPiece' in the output array.
+        fillStateWith(nextPiece, offset=nextPieceOffset)
+
+        # Roll the channels (the first dimension in the shape) to make place for the latest state.
+        np.roll(preprocessedSequences, 1, axis=0)
+        # Let the previous state (i.e. current sequence) be the first item in the tensor.
+        preprocessedSequences[0] = prevState
+        # Advance one step (corresponding to executing an action).
+        prevState = np.copy(currentState)
+
+        # Save the experience transition, and make sure not to pass any references as the
+        # arrays WILL be changed later.
+        replayMemory[replays] = ExperienceTransition(np.copy(preprocessedSequences),
+                                                     action=0,
+                                                     reward=0,
+                                                     # Un-intuitively the NEW prevState is the actual sequence
+                                                     # resulting from the action.
+                                                     nextSequence=prevState)
+        # Update the number of done replays and make sure not to go out of bounds in the replay memory.
+        replays = (replays + 1) % replayMemorySize
+
+        miniBatch = random.sample(replays, miniBatchSize)
 
         pygame.display.update()
         FPSCLOCK.tick(FPS)
