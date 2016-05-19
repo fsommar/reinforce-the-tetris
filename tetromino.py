@@ -7,6 +7,8 @@ import pygame
 import random
 import sys
 import time
+import numpy as np
+import matplotlib.pyplot as plt
 
 from pygame.locals import *
 
@@ -265,6 +267,24 @@ def runGame():
                         if not isValidPosition(board, fallingPiece, adjY=i):
                             break
                     fallingPiece['y'] += i - 1
+
+                elif event.key == K_j:
+                    arr = np.array(map(lambda row: map(lambda cell: cell != BLANK, row), board), dtype=bool)
+                    # We need to make the array square to simplify the using of the neural network later on.
+                    arr = np.vstack((arr, np.zeros((10, 20))))
+
+                    def drawPieceAt(piece, (offsetX, offsetY)=(0, 0)):
+                        """Adds a piece to the static board with the supplied offset."""
+                        shapeToDraw = PIECES[piece['shape']][piece['rotation']]
+                        for x in range(TEMPLATEWIDTH):
+                            for y in range(TEMPLATEHEIGHT):
+                                if shapeToDraw[y][x] != BLANK:
+                                    arr[offsetX + piece['x'] + x, offsetY + piece['y'] + y] = True
+
+                    drawPieceAt(fallingPiece)
+                    drawPieceAt(nextPiece, (10, 5))
+                    plt.imshow(arr.T, cmap='Greys', interpolation='nearest')
+                    plt.show()
 
         # handle moving the piece because of user input
         if (movingLeft or movingRight) and time.time() - lastMoveSidewaysTime > MOVESIDEWAYSFREQ:
