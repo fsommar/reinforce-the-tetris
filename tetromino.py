@@ -269,12 +269,14 @@ def runGame():
                     fallingPiece['y'] += i - 1
 
                 elif event.key == K_j:
-                    arr = np.array(map(lambda row: map(lambda cell: cell != BLANK, row), board), dtype=bool)
-                    # We need to make the array square to simplify the using of the neural network later on.
-                    arr = np.vstack((arr, np.zeros((10, 20))))
+                    arr = np.zeros((20, 20))
+                    for x in range(len(board)):
+                        for y in range(len(board[x])):
+                            arr[x, y] = board[x][y] != BLANK
 
-                    def drawPieceAt(piece, (offsetX, offsetY)=(0, 0)):
+                    def drawPieceAt(piece, offset=(0, 0)):
                         """Adds a piece to the static board with the supplied offset."""
+                        (offsetX, offsetY) = offset
                         shapeToDraw = PIECES[piece['shape']][piece['rotation']]
                         for x in range(TEMPLATEWIDTH):
                             for y in range(TEMPLATEHEIGHT):
@@ -284,6 +286,8 @@ def runGame():
                     drawPieceAt(fallingPiece)
                     drawPieceAt(nextPiece, (10, 5))
                     plt.imshow(arr.T, cmap='Greys', interpolation='nearest')
+                    # When matplotlib shows the window with the array, it crashes internally (at least on OS X).
+                    # The windows are still opened but the game does not continue running.
                     plt.show()
 
         # handle moving the piece because of user input
