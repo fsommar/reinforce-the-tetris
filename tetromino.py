@@ -10,16 +10,25 @@ import sys
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+import os.path
+import pickle
 
 from pygame.locals import *
 
 from ExperienceTransition import ExperienceTransition
 
+REPLAY_MEMORY_SIZE = 100000
+REPLAY_START_SIZE = REPLAY_MEMORY_SIZE / 20
+REPLAY_FILE = "replay_memory.dat"
+MINI_BATCH_SIZE = 32
+NEXT_PIECE_OFFSET = (10, 5)
+USER_INPUT = False
+
 FPS = 25
 BOXSIZE = 20
 BOARDWIDTH = 10
 BOARDHEIGHT = 20
-WINDOWWIDTH = 480
+WINDOWWIDTH = 640
 WINDOWHEIGHT = 480
 BLANK = '.'
 
@@ -186,17 +195,32 @@ def main():
         showTextScreen('Game Over')
 
 
+def loadReplaysIfExist() -> List[ExperienceTransition]:
+    if os.path.isfile(REPLAY_FILE):
+        with open(REPLAY_FILE, "rb") as f:
+            return pickle.load(f)
+    else:
+        return [None] * REPLAY_MEMORY_SIZE
+
+
 def runGame():
     # Initialization of Deep Q-Network-related variables
-    replayMemorySize = 100000
     preprocessedSequences = np.zeros((4, 20, 20), dtype=np.bool)
-    replayMemory = [None] * replayMemorySize  # type: List[ExperienceTransition]
-    replayStartSize = replayMemorySize / 20
+    replayMemory = loadReplaysIfExist()
+
+    """
+    An action can be of 4 different values:
+        * 0 - For a no-op; let the tetromino fall.
+        * 1 - Move the tetromino to the left, and
+        * 2 - Move it to the right.
+        * 3 - Rotate the tetromino.
+    """
+    action = 0
     replays = 0
-    miniBatchSize = 32
-    nextPieceOffset = (10, 5)
+    prevScore = 0
     prevState = np.zeros((20, 20))
     currentState = np.zeros((20, 20))
+    lastUpdateTime = time.time()
 
     # setup variables for the start of the game
     board = getBlankBoard()
@@ -212,7 +236,7 @@ def runGame():
     fallingPiece = getNewPiece()
     nextPiece = getNewPiece()
 
-    def fillStateWith(piece, offset=(0, 0), value: bool=True) -> None:
+    def fillStateWith(piece, offset: (int, int)=(0, 0), value: bool=True) -> None:
         """Adds a piece to the static board with the supplied offset."""
         if piece is None:
             return
@@ -227,7 +251,7 @@ def runGame():
         if fallingPiece is None:
             # No falling piece in play, so start a new piece at the top
             # Remove the old 'nextPiece' and make space for the new one in the feature array.
-            fillStateWith(nextPiece, nextPieceOffset, value=False)
+            fillStateWith(nextPiece, NEXT_PIECE_OFFSET, value=False)
             fallingPiece = nextPiece
             nextPiece = getNewPiece()
             lastFallTime = time.time()  # reset lastFallTime
@@ -270,13 +294,9 @@ def runGame():
 
                 # rotating the piece (if there is room to rotate)
                 elif event.key == K_UP or event.key == K_w:
-                    fallingPiece['rotation'] = (fallingPiece['rotation'] + 1) % len(PIECES[fallingPiece['shape']])
-                    if not isValidPosition(board, fallingPiece):
-                        fallingPiece['rotation'] = (fallingPiece['rotation'] - 1) % len(PIECES[fallingPiece['shape']])
+                    rotatePiece(fallingPiece, board)
                 elif event.key == K_q:  # rotate the other direction
-                    fallingPiece['rotation'] = (fallingPiece['rotation'] - 1) % len(PIECES[fallingPiece['shape']])
-                    if not isValidPosition(board, fallingPiece):
-                        fallingPiece['rotation'] = (fallingPiece['rotation'] + 1) % len(PIECES[fallingPiece['shape']])
+                    rotatePiece(fallingPiece, board, reverse=True)
 
                 # making the piece fall faster with the down key
                 elif event.key == K_DOWN or event.key == K_s:
@@ -309,7 +329,19 @@ def runGame():
                     axes[1, 1].set_title("$t_{-3}$")
                     plt.show()
 
-        # handle moving the piece because of user input
+                elif event.key == K_k:
+                    with open(REPLAY_FILE, "wb") as f:
+                        pickle.dump(replayMemory, f)
+                    print("Wrote replay memory to {}".format(REPLAY_FILE))
+
+        # Handle neural network actions.
+        if not USER_INPUT:
+            movingLeft = action == 1
+            movingRight = action == 2
+            if action == 3:
+                rotatePiece(fallingPiece, board)
+
+        # handle moving the piece because of user input OR actions from the neural network
         if (movingLeft or movingRight) and time.time() - lastMoveSidewaysTime > MOVESIDEWAYSFREQ:
             if movingLeft and isValidPosition(board, fallingPiece, adjX=-1):
                 fallingPiece['x'] -= 1
@@ -342,37 +374,45 @@ def runGame():
         drawStatus(score, level)
         drawNextPiece(nextPiece)
 
-        # The board has (possibly) changed, recalculate the currentState
-        for x in range(len(board)):
-            for y in range(len(board[x])):
-                currentState[x, y] = board[x][y] != BLANK
-
         if fallingPiece is not None:
             drawPiece(fallingPiece)
+
+        # TODO: Account for the fact that the timer will be off if this takes too long time.
+        # It clearly will take "too" long time, as a prediction currently takes between 0.5 and 1 second.
+        if time.time() - lastUpdateTime > MOVESIDEWAYSFREQ:
+            # The board has (possibly) changed, recalculate the currentState
+            for x in range(len(board)):
+                for y in range(len(board[x])):
+                    currentState[x, y] = board[x][y] != BLANK
+
+            # The falling piece is not included in the board data and needs to be added.
             fillStateWith(fallingPiece)
+            # Draw the new one 'nextPiece' in the output array.
+            fillStateWith(nextPiece, offset=NEXT_PIECE_OFFSET)
 
-        # Draw the new one 'nextPiece' in the output array.
-        fillStateWith(nextPiece, offset=nextPieceOffset)
+            # Roll the channels (the first dimension in the shape) to make place for the latest state.
+            preprocessedSequences = np.roll(preprocessedSequences, 1, axis=0)
+            # Let the previous state (i.e. current sequence) be the first item in the tensor.
+            preprocessedSequences[0] = prevState
+            # Advance one step (corresponding to executing an action).
+            prevState = np.copy(currentState)
 
-        # Roll the channels (the first dimension in the shape) to make place for the latest state.
-        preprocessedSequences = np.roll(preprocessedSequences, 1, axis=0)
-        # Let the previous state (i.e. current sequence) be the first item in the tensor.
-        preprocessedSequences[0] = prevState
-        # Advance one step (corresponding to executing an action).
-        prevState = np.copy(currentState)
+            # It's important not to pass any references as the arrays WILL be changed later.
+            replayMemory[replays] = ExperienceTransition(np.copy(preprocessedSequences),
+                                                         action=action,
+                                                         reward=score - prevScore,
+                                                         # Un-intuitively the NEW prevState is the actual sequence
+                                                         # resulting from the action.
+                                                         nextSequence=prevState)
+            # Make sure not to go out of bounds in the replay memory.
+            replays = (replays + 1) % REPLAY_MEMORY_SIZE
+            prevScore = score
 
-        # Save the experience transition, and make sure not to pass any references as the
-        # arrays WILL be changed later.
-        replayMemory[replays] = ExperienceTransition(np.copy(preprocessedSequences),
-                                                     action=0,
-                                                     reward=0,
-                                                     # Un-intuitively the NEW prevState is the actual sequence
-                                                     # resulting from the action.
-                                                     nextSequence=prevState)
-        # Update the number of done replays and make sure not to go out of bounds in the replay memory.
-        replays = (replays + 1) % replayMemorySize
+            # TODO: Let the neural network predict the next action.
+            miniBatch = random.sample(replayMemory, MINI_BATCH_SIZE)
+            action = random.choice(range(4))
 
-        miniBatch = random.sample(replayMemory, miniBatchSize)
+            lastUpdateTime = time.time()
 
         pygame.display.update()
         FPSCLOCK.tick(FPS)
@@ -450,6 +490,12 @@ def getNewPiece():
                 'color': random.randint(0, len(COLORS) - 1)}
     return newPiece
 
+def rotatePiece(piece, board, reverse: bool=False):
+    direction = 1 if not reverse else -1
+    oldRotation = piece['rotation']
+    piece['rotation'] = (piece['rotation'] + direction) % len(PIECES[piece['shape']])
+    if not isValidPosition(board, piece):
+        piece['rotation'] = oldRotation
 
 def addToBoard(board, piece):
     # fill in the board based on piece's location, shape, and rotation
