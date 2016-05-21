@@ -296,9 +296,17 @@ def runGame():
                     fallingPiece['y'] += i - 1
 
                 elif event.key == K_j:
-                    plt.imshow(currentState.T, cmap='Greys', interpolation='nearest')
                     # When matplotlib shows the window with the array, it crashes internally (at least on OS X).
                     # The windows are still opened but the game does not continue running.
+                    _, axes = plt.subplots(2, 2, sharey='row', sharex='col')
+                    axes[(0, 0)].imshow(preprocessedSequences[0].T, cmap='Greys', interpolation='nearest')
+                    axes[0, 0].set_title("$t_0$")
+                    axes[0, 1].imshow(preprocessedSequences[1].T, cmap='Greys', interpolation='nearest')
+                    axes[0, 1].set_title("$t_{-1}$")
+                    axes[1, 0].imshow(preprocessedSequences[2].T, cmap='Greys', interpolation='nearest')
+                    axes[1, 0].set_title("$t_{-2}$")
+                    axes[1, 1].imshow(preprocessedSequences[3].T, cmap='Greys', interpolation='nearest')
+                    axes[1, 1].set_title("$t_{-3}$")
                     plt.show()
 
         # handle moving the piece because of user input
@@ -347,7 +355,7 @@ def runGame():
         fillStateWith(nextPiece, offset=nextPieceOffset)
 
         # Roll the channels (the first dimension in the shape) to make place for the latest state.
-        np.roll(preprocessedSequences, 1, axis=0)
+        preprocessedSequences = np.roll(preprocessedSequences, 1, axis=0)
         # Let the previous state (i.e. current sequence) be the first item in the tensor.
         preprocessedSequences[0] = prevState
         # Advance one step (corresponding to executing an action).
@@ -364,7 +372,7 @@ def runGame():
         # Update the number of done replays and make sure not to go out of bounds in the replay memory.
         replays = (replays + 1) % replayMemorySize
 
-        miniBatch = random.sample(replays, miniBatchSize)
+        miniBatch = random.sample(replayMemory, miniBatchSize)
 
         pygame.display.update()
         FPSCLOCK.tick(FPS)
