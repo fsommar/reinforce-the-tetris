@@ -14,3 +14,6 @@ class ExperienceTransition:
         self.action = action  # type: int
         self.reward = reward  # type: int
         self.nextSequence = nextSequence  # type: np.ndarray
+
+    def doesTerminate(self) -> bool:
+        return self.nextSequence is None

@@ -1,5 +1,12 @@
 import sys
 from keras.models import Sequential
+import numpy as np
+
+
+def sequenceAsBatch(sequence: np.ndarray) -> np.ndarray:
+    # This function converts the array have one additional index
+    # Shape (4, 20, 20) -> (1, 4, 20, 20)
+    return np.stack((sequence,))
 
 
 def saveArchitecture(network, fileName: str):
