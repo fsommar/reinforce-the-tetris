@@ -8,6 +8,7 @@ import pygame
 import random
 import sys
 import time
+import copy
 import numpy as np
 import matplotlib.pyplot as plt
 import os.path
@@ -15,13 +16,18 @@ import pickle
 
 from pygame.locals import *
 
+import utils
+import deepQNetwork as dqn
 from ExperienceTransition import ExperienceTransition
 
-REPLAY_MEMORY_SIZE = 100000
+REPLAY_MEMORY_SIZE = 100000 # 1'000'000 in original report
 REPLAY_START_SIZE = REPLAY_MEMORY_SIZE / 20
 REPLAY_FILE = "replay_memory.dat"
+NETWORK_ARCHITECTURE_FILE = "dqn_architecture"
+NETWORK_WEIGHTS_FILE = "initial_weights"
 MINI_BATCH_SIZE = 32
 NEXT_PIECE_OFFSET = (10, 5)
+NETWORK_UPDATE_FREQUENCY = 1000 # 10'000 in original report
 USER_INPUT = False
 
 FPS = 25
@@ -197,17 +203,35 @@ def main():
 
 def loadReplaysIfExist() -> List[ExperienceTransition]:
     if os.path.isfile(REPLAY_FILE):
+        print("Loaded replays")
         with open(REPLAY_FILE, "rb") as f:
             return pickle.load(f)
     else:
         return [None] * REPLAY_MEMORY_SIZE
 
 
+def loadNetworkIfExists():
+    if (os.path.isfile(NETWORK_ARCHITECTURE_FILE + ".json") and
+            os.path.isfile(NETWORK_WEIGHTS_FILE + ".h5")):
+        print("Loaded existing architecture and weights")
+        return utils.loadArchitectureAndWeights(NETWORK_ARCHITECTURE_FILE, NETWORK_WEIGHTS_FILE)
+    network = dqn.buildNetwork()
+    utils.saveArchitectureAndWeights(network, NETWORK_ARCHITECTURE_FILE, NETWORK_WEIGHTS_FILE)
+    return network
+
+
 def runGame():
     # Initialization of Deep Q-Network-related variables
-    preprocessedSequences = np.zeros((4, 20, 20), dtype=np.bool)
-    replayMemory = loadReplaysIfExist()
+    learningNetwork = loadNetworkIfExists()
+    targetNetwork = copy.deepcopy(learningNetwork)
+    dqn.compileNetwork(learningNetwork)
+    dqn.compileNetwork(targetNetwork)
 
+    gamma = 0.99
+    epsilon = 0.1
+
+    replayMemory = loadReplaysIfExist()
+    preprocessedSequences = np.zeros((4, 20, 20), dtype=np.bool)
     """
     An action can be of 4 different values:
         * 0 - For a no-op; let the tetromino fall.
@@ -216,7 +240,11 @@ def runGame():
         * 3 - Rotate the tetromino.
     """
     action = 0
-    replays = 0
+    # Enter new sequences after the existing ones, if replayMemory is not full
+    try:
+        replays = replayMemory.index(None)
+    except ValueError:
+        replays = 0
     prevScore = 0
     prevState = np.zeros((20, 20))
     currentState = np.zeros((20, 20))
@@ -407,10 +435,20 @@ def runGame():
             # Make sure not to go out of bounds in the replay memory.
             replays = (replays + 1) % REPLAY_MEMORY_SIZE
             prevScore = score
+            usedMemory = replayMemory if replayMemory[replays] is not None else replayMemory[:replays]
+            miniBatch = random.sample(usedMemory, MINI_BATCH_SIZE)
+            start = time.time()
+            # TODO: Update target network after NETWORK_UPDATE_FREQUENCY frames
+            dqn.trainOnBatch(learningNetwork, targetNetwork, miniBatch, gamma)
+            print("Training on batch took {}".format(time.time() - start))
 
-            # TODO: Let the neural network predict the next action.
-            miniBatch = random.sample(replayMemory, MINI_BATCH_SIZE)
-            action = random.choice(range(4))
+            # TODO: Choose random actions until replayMemory is of size REPLAY_START_SIZE
+            # Choose random action with probability epsilon
+            # TODO: Anneal epsilon over time
+            if random.random() < epsilon:
+                action = random.choice(range(4))
+            else:
+                dqn.predictBestAction(learningNetwork, preprocessedSequences)
 
             lastUpdateTime = time.time()
 
@@ -490,12 +528,14 @@ def getNewPiece():
                 'color': random.randint(0, len(COLORS) - 1)}
     return newPiece
 
+
 def rotatePiece(piece, board, reverse: bool=False):
     direction = 1 if not reverse else -1
     oldRotation = piece['rotation']
     piece['rotation'] = (piece['rotation'] + direction) % len(PIECES[piece['shape']])
     if not isValidPosition(board, piece):
         piece['rotation'] = oldRotation
+
 
 def addToBoard(board, piece):
     # fill in the board based on piece's location, shape, and rotation
