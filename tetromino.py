@@ -2,33 +2,24 @@
 # By Al Sweigart al@inventwithpython.com
 # http://inventwithpython.com/pygame
 # Released under a "Simplified BSD" license
-from typing import List
-
 import pygame
 import random
 import sys
 import time
-import copy
-import numpy as np
-import matplotlib.pyplot as plt
 import os.path
-import pickle
 
+from keras.models import Sequential
 from pygame.locals import *
 
 import utils
 import deepQNetwork as dqn
-from ExperienceTransition import ExperienceTransition
 
-REPLAY_MEMORY_SIZE = 100000 # 1'000'000 in original report
-REPLAY_START_SIZE = REPLAY_MEMORY_SIZE / 20
-REPLAY_FILE = "replay_memory.dat"
-NETWORK_ARCHITECTURE_FILE = "dqn_architecture"
-NETWORK_WEIGHTS_FILE = "initial_weights"
 MINI_BATCH_SIZE = 32
 NEXT_PIECE_OFFSET = (10, 5)
-NETWORK_UPDATE_FREQUENCY = 1000 # 10'000 in original report
+NETWORK_UPDATE_FREQUENCY = 1000  # 10'000 in original report
 USER_INPUT = False
+NETWORK_ARCHITECTURE_FILE = "dqn_architecture"
+NETWORK_WEIGHTS_FILE = "initial_weights"
 
 FPS = 25
 BOXSIZE = 20
@@ -190,48 +181,23 @@ def main():
     pygame.display.set_caption('Tetromino')
 
     showTextScreen('Tetromino')
+    dqnData = dqn.DQNData(learningNetwork=loadNetworkIfExists())
     while True:  # game loop
-        if random.randint(0, 1) == 0:
-            pygame.mixer.music.load('tetrisb.mid')
-        else:
-            pygame.mixer.music.load('tetrisc.mid')
-        pygame.mixer.music.play(-1, 0.0)
-        runGame()
-        pygame.mixer.music.stop()
-        showTextScreen('Game Over')
+        if USER_INPUT:
+            if False and random.randint(0, 1) == 0:
+                pygame.mixer.music.load('tetrisb.mid')
+            else:
+                pygame.mixer.music.load('tetrisc.mid')
+            pygame.mixer.music.play(-1, 0.0)
+        action = runGame(dqnData)
+        # It doesn't matter what the score is as it's not kept into account when the action leads to game over.
+        dqnData.update(action=action, gameOver=True)
+        if USER_INPUT:
+            pygame.mixer.music.stop()
+            showTextScreen('Game Over')
 
 
-def loadReplaysIfExist() -> List[ExperienceTransition]:
-    if os.path.isfile(REPLAY_FILE):
-        print("Loaded replays")
-        with open(REPLAY_FILE, "rb") as f:
-            return pickle.load(f)
-    else:
-        return [None] * REPLAY_MEMORY_SIZE
-
-
-def loadNetworkIfExists():
-    if (os.path.isfile(NETWORK_ARCHITECTURE_FILE + ".json") and
-            os.path.isfile(NETWORK_WEIGHTS_FILE + ".h5")):
-        print("Loaded existing architecture and weights")
-        return utils.loadArchitectureAndWeights(NETWORK_ARCHITECTURE_FILE, NETWORK_WEIGHTS_FILE)
-    network = dqn.buildNetwork()
-    utils.saveArchitectureAndWeights(network, NETWORK_ARCHITECTURE_FILE, NETWORK_WEIGHTS_FILE)
-    return network
-
-
-def runGame():
-    # Initialization of Deep Q-Network-related variables
-    learningNetwork = loadNetworkIfExists()
-    targetNetwork = copy.deepcopy(learningNetwork)
-    dqn.compileNetwork(learningNetwork)
-    dqn.compileNetwork(targetNetwork)
-
-    gamma = 0.99
-    epsilon = 0.1
-
-    replayMemory = loadReplaysIfExist()
-    preprocessedSequences = np.zeros((4, 20, 20), dtype=np.bool)
+def runGame(dqnData) -> int:
     """
     An action can be of 4 different values:
         * 0 - For a no-op; let the tetromino fall.
@@ -240,16 +206,7 @@ def runGame():
         * 3 - Rotate the tetromino.
     """
     action = 0
-    # Enter new sequences after the existing ones, if replayMemory is not full
-    try:
-        replays = replayMemory.index(None)
-    except ValueError:
-        replays = 0
-    prevScore = 0
-    prevState = np.zeros((20, 20))
-    currentState = np.zeros((20, 20))
     lastUpdateTime = time.time()
-
     # setup variables for the start of the game
     board = getBlankBoard()
     lastMoveDownTime = time.time()
@@ -264,7 +221,7 @@ def runGame():
     fallingPiece = getNewPiece()
     nextPiece = getNewPiece()
 
-    def fillStateWith(piece, offset: (int, int)=(0, 0), value: bool=True) -> None:
+    def fillStateWith(piece, offset: (int, int) = (0, 0), value: bool = True) -> None:
         """Adds a piece to the static board with the supplied offset."""
         if piece is None:
             return
@@ -273,7 +230,7 @@ def runGame():
         for x in range(TEMPLATEWIDTH):
             for y in range(TEMPLATEHEIGHT):
                 if shapeToDraw[y][x] != BLANK:
-                    currentState[offsetX + piece['x'] + x, offsetY + piece['y'] + y] = value
+                    dqnData.currentState[offsetX + piece['x'] + x, offsetY + piece['y'] + y] = value
 
     while True:  # game loop
         if fallingPiece is None:
@@ -285,7 +242,7 @@ def runGame():
             lastFallTime = time.time()  # reset lastFallTime
 
             if not isValidPosition(board, fallingPiece):
-                return  # can't fit a new piece on the board, so game over
+                return action  # can't fit a new piece on the board, so game over
 
         checkForQuit()
         for event in pygame.event.get():  # event handling loop
@@ -344,23 +301,10 @@ def runGame():
                     fallingPiece['y'] += i - 1
 
                 elif event.key == K_j:
-                    # When matplotlib shows the window with the array, it crashes internally (at least on OS X).
-                    # The windows are still opened but the game does not continue running.
-                    _, axes = plt.subplots(2, 2, sharey='row', sharex='col')
-                    axes[(0, 0)].imshow(preprocessedSequences[0].T, cmap='Greys', interpolation='nearest')
-                    axes[0, 0].set_title("$t_0$")
-                    axes[0, 1].imshow(preprocessedSequences[1].T, cmap='Greys', interpolation='nearest')
-                    axes[0, 1].set_title("$t_{-1}$")
-                    axes[1, 0].imshow(preprocessedSequences[2].T, cmap='Greys', interpolation='nearest')
-                    axes[1, 0].set_title("$t_{-2}$")
-                    axes[1, 1].imshow(preprocessedSequences[3].T, cmap='Greys', interpolation='nearest')
-                    axes[1, 1].set_title("$t_{-3}$")
-                    plt.show()
+                    dqnData.show()
 
                 elif event.key == K_k:
-                    with open(REPLAY_FILE, "wb") as f:
-                        pickle.dump(replayMemory, f)
-                    print("Wrote replay memory to {}".format(REPLAY_FILE))
+                    dqnData.writeReplayFile()
 
         # Handle neural network actions.
         if not USER_INPUT:
@@ -407,53 +351,46 @@ def runGame():
 
         # TODO: Account for the fact that the timer will be off if this takes too long time.
         # It clearly will take "too" long time, as a prediction currently takes between 0.5 and 1 second.
-        if time.time() - lastUpdateTime > MOVESIDEWAYSFREQ:
+        if not USER_INPUT and time.time() - lastUpdateTime > MOVESIDEWAYSFREQ:
             # The board has (possibly) changed, recalculate the currentState
             for x in range(len(board)):
                 for y in range(len(board[x])):
-                    currentState[x, y] = board[x][y] != BLANK
+                    dqnData.currentState[x, y] = board[x][y] != BLANK
 
             # The falling piece is not included in the board data and needs to be added.
             fillStateWith(fallingPiece)
             # Draw the new one 'nextPiece' in the output array.
             fillStateWith(nextPiece, offset=NEXT_PIECE_OFFSET)
 
-            # Roll the channels (the first dimension in the shape) to make place for the latest state.
-            preprocessedSequences = np.roll(preprocessedSequences, 1, axis=0)
-            # Let the previous state (i.e. current sequence) be the first item in the tensor.
-            preprocessedSequences[0] = prevState
-            # Advance one step (corresponding to executing an action).
-            prevState = np.copy(currentState)
+            dqnData.update(action=action, score=score)
+            usedMemory = dqnData.getFilledMemory()
+            if len(usedMemory) == 5000:
+                print("Start predicting stuff")
+            if len(usedMemory) >= 5000:
+                miniBatch = random.sample(usedMemory, MINI_BATCH_SIZE)
 
-            # It's important not to pass any references as the arrays WILL be changed later.
-            replayMemory[replays] = ExperienceTransition(np.copy(preprocessedSequences),
-                                                         action=action,
-                                                         reward=score - prevScore,
-                                                         # Un-intuitively the NEW prevState is the actual sequence
-                                                         # resulting from the action.
-                                                         nextSequence=prevState)
-            # Make sure not to go out of bounds in the replay memory.
-            replays = (replays + 1) % REPLAY_MEMORY_SIZE
-            prevScore = score
-            usedMemory = replayMemory if replayMemory[replays] is not None else replayMemory[:replays]
-            miniBatch = random.sample(usedMemory, MINI_BATCH_SIZE)
-            start = time.time()
-            # TODO: Update target network after NETWORK_UPDATE_FREQUENCY frames
-            dqn.trainOnBatch(learningNetwork, targetNetwork, miniBatch, gamma)
-            print("Training on batch took {}".format(time.time() - start))
+                start = time.time()
+                # TODO: Update target network after NETWORK_UPDATE_FREQUENCY frames
+                dqnData.trainOnMiniBatch(miniBatch)
+                print("Training on batch took {}".format(time.time() - start))
 
-            # TODO: Choose random actions until replayMemory is of size REPLAY_START_SIZE
-            # Choose random action with probability epsilon
-            # TODO: Anneal epsilon over time
-            if random.random() < epsilon:
-                action = random.choice(range(4))
+                action = dqnData.predictAction()
             else:
-                dqn.predictBestAction(learningNetwork, preprocessedSequences)
-
+                action = random.choice(range(4))
             lastUpdateTime = time.time()
 
         pygame.display.update()
         FPSCLOCK.tick(FPS)
+
+
+def loadNetworkIfExists() -> Sequential:
+    if (os.path.isfile(NETWORK_ARCHITECTURE_FILE + ".json") and
+            os.path.isfile(NETWORK_WEIGHTS_FILE + ".h5")):
+        print("Loaded existing architecture and weights")
+        return utils.loadArchitectureAndWeights(NETWORK_ARCHITECTURE_FILE, NETWORK_WEIGHTS_FILE)
+    network = dqn.buildNetwork()
+    utils.saveArchitectureAndWeights(network, NETWORK_ARCHITECTURE_FILE, NETWORK_WEIGHTS_FILE)
+    return network
 
 
 def makeTextObjs(text, font, color):
@@ -529,7 +466,7 @@ def getNewPiece():
     return newPiece
 
 
-def rotatePiece(piece, board, reverse: bool=False):
+def rotatePiece(piece, board, reverse: bool = False):
     direction = 1 if not reverse else -1
     oldRotation = piece['rotation']
     piece['rotation'] = (piece['rotation'] + direction) % len(PIECES[piece['shape']])
