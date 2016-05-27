@@ -17,7 +17,7 @@ import deepQNetwork as dqn
 MINI_BATCH_SIZE = 32
 NEXT_PIECE_OFFSET = (10, 5)
 NETWORK_UPDATE_FREQUENCY = 1000  # 10'000 in original report
-USER_INPUT = False
+USER_INPUT = True
 NETWORK_ARCHITECTURE_FILE = "dqn_architecture"
 NETWORK_WEIGHTS_FILE = "initial_weights"
 
@@ -184,7 +184,7 @@ def main():
     dqnData = dqn.DQNData(learningNetwork=loadNetworkIfExists())
     while True:  # game loop
         if USER_INPUT:
-            if False and random.randint(0, 1) == 0:
+            if random.randint(0, 1) == 0:
                 pygame.mixer.music.load('tetrisb.mid')
             else:
                 pygame.mixer.music.load('tetrisc.mid')
@@ -194,7 +194,7 @@ def main():
         dqnData.update(action=action, gameOver=True)
         if USER_INPUT:
             pygame.mixer.music.stop()
-            showTextScreen('Game Over')
+            # showTextScreen('Game Over')
 
 
 def runGame(dqnData) -> int:
@@ -209,12 +209,7 @@ def runGame(dqnData) -> int:
     lastUpdateTime = time.time()
     # setup variables for the start of the game
     board = getBlankBoard()
-    lastMoveDownTime = time.time()
-    lastMoveSidewaysTime = time.time()
     lastFallTime = time.time()
-    movingDown = False  # note: there is no movingUp variable
-    movingLeft = False
-    movingRight = False
     score = 0
     level, fallFreq = calculateLevelAndFallFreq(score)
 
@@ -254,77 +249,21 @@ def runGame(dqnData) -> int:
                     showTextScreen('Paused')  # pause until a key press
                     pygame.mixer.music.play(-1, 0.0)
                     lastFallTime = time.time()
-                    lastMoveDownTime = time.time()
-                    lastMoveSidewaysTime = time.time()
-                elif event.key == K_LEFT or event.key == K_a:
-                    movingLeft = False
-                elif event.key == K_RIGHT or event.key == K_d:
-                    movingRight = False
-                elif event.key == K_DOWN or event.key == K_s:
-                    movingDown = False
 
             elif event.type == KEYDOWN:
                 # moving the piece sideways
                 if (event.key == K_LEFT or event.key == K_a) and isValidPosition(board, fallingPiece, adjX=-1):
-                    fallingPiece['x'] -= 1
-                    movingLeft = True
-                    movingRight = False
-                    lastMoveSidewaysTime = time.time()
-
+                    action = 1
                 elif (event.key == K_RIGHT or event.key == K_d) and isValidPosition(board, fallingPiece, adjX=1):
-                    fallingPiece['x'] += 1
-                    movingRight = True
-                    movingLeft = False
-                    lastMoveSidewaysTime = time.time()
-
+                    action = 2
                 # rotating the piece (if there is room to rotate)
                 elif event.key == K_UP or event.key == K_w:
-                    rotatePiece(fallingPiece, board)
-                elif event.key == K_q:  # rotate the other direction
-                    rotatePiece(fallingPiece, board, reverse=True)
-
-                # making the piece fall faster with the down key
-                elif event.key == K_DOWN or event.key == K_s:
-                    movingDown = True
-                    if isValidPosition(board, fallingPiece, adjY=1):
-                        fallingPiece['y'] += 1
-                    lastMoveDownTime = time.time()
-
-                # move the current piece all the way down
-                elif event.key == K_SPACE:
-                    movingDown = False
-                    movingLeft = False
-                    movingRight = False
-                    for i in range(1, BOARDHEIGHT):
-                        if not isValidPosition(board, fallingPiece, adjY=i):
-                            break
-                    fallingPiece['y'] += i - 1
+                    action = 3
 
                 elif event.key == K_j:
                     dqnData.show()
-
                 elif event.key == K_k:
                     dqnData.writeReplayFile()
-
-        # Handle neural network actions.
-        if not USER_INPUT:
-            movingLeft = action == 1
-            movingRight = action == 2
-            if action == 3:
-                rotatePiece(fallingPiece, board)
-
-        # handle moving the piece because of user input OR actions from the neural network
-        if (movingLeft or movingRight) and time.time() - lastMoveSidewaysTime > MOVESIDEWAYSFREQ:
-            if movingLeft and isValidPosition(board, fallingPiece, adjX=-1):
-                fallingPiece['x'] -= 1
-            elif movingRight and isValidPosition(board, fallingPiece, adjX=1):
-                fallingPiece['x'] += 1
-            lastMoveSidewaysTime = time.time()
-
-        if movingDown and time.time() - lastMoveDownTime > MOVEDOWNFREQ and isValidPosition(board, fallingPiece,
-                                                                                            adjY=1):
-            fallingPiece['y'] += 1
-            lastMoveDownTime = time.time()
 
         # let the piece fall if it is time to fall
         if time.time() - lastFallTime > fallFreq:
@@ -349,35 +288,47 @@ def runGame(dqnData) -> int:
         if fallingPiece is not None:
             drawPiece(fallingPiece)
 
-        # TODO: Account for the fact that the timer will be off if this takes too long time.
-        # It clearly will take "too" long time, as a prediction currently takes between 0.5 and 1 second.
-        if not USER_INPUT and time.time() - lastUpdateTime > MOVESIDEWAYSFREQ:
-            # The board has (possibly) changed, recalculate the currentState
-            for x in range(len(board)):
-                for y in range(len(board[x])):
-                    dqnData.currentState[x, y] = board[x][y] != BLANK
+            # TODO: Account for the fact that the timer will be off if this takes too long time.
+            # It clearly will take "too" long time, as a prediction currently takes between 0.5 and 1 second.
+            if time.time() - lastUpdateTime > MOVESIDEWAYSFREQ:
+                if action == 1 and isValidPosition(board, fallingPiece, adjX=-1):
+                    fallingPiece['x'] -= 1
+                elif action == 2 and isValidPosition(board, fallingPiece, adjX=1):
+                    fallingPiece['x'] += 1
+                elif action == 3:
+                    rotatePiece(fallingPiece, board)
 
-            # The falling piece is not included in the board data and needs to be added.
-            fillStateWith(fallingPiece)
-            # Draw the new one 'nextPiece' in the output array.
-            fillStateWith(nextPiece, offset=NEXT_PIECE_OFFSET)
+                # The board has (possibly) changed, recalculate the currentState
+                for x in range(len(board)):
+                    for y in range(len(board[x])):
+                        dqnData.currentState[x, y] = board[x][y] != BLANK
 
-            dqnData.update(action=action, score=score)
-            usedMemory = dqnData.getFilledMemory()
-            if len(usedMemory) == 5000:
-                print("Start predicting stuff")
-            if len(usedMemory) >= 5000:
-                miniBatch = random.sample(usedMemory, MINI_BATCH_SIZE)
+                # The falling piece is not included in the board data and needs to be added.
+                fillStateWith(fallingPiece)
+                # Draw the new one 'nextPiece' in the output array.
+                fillStateWith(nextPiece, offset=NEXT_PIECE_OFFSET)
 
-                start = time.time()
-                # TODO: Update target network after NETWORK_UPDATE_FREQUENCY frames
-                dqnData.trainOnMiniBatch(miniBatch)
-                print("Training on batch took {}".format(time.time() - start))
+                dqnData.update(action=action, score=score)
+                if not USER_INPUT:
+                    usedMemory = dqnData.getFilledMemory()
+                    if len(usedMemory) == 5000:
+                        print("Start predicting stuff")
+                    if len(usedMemory) >= 5000:
+                        miniBatch = random.sample(usedMemory, MINI_BATCH_SIZE)
 
-                action = dqnData.predictAction()
-            else:
-                action = random.choice(range(4))
-            lastUpdateTime = time.time()
+                        start = time.time()
+                        # TODO: Update target network after NETWORK_UPDATE_FREQUENCY frames
+                        dqnData.trainOnMiniBatch(miniBatch)
+                        print("Training on batch took {}".format(time.time() - start))
+
+                        action = dqnData.predictAction()
+                    else:
+                        action = random.choice(range(4))
+                else:
+                    # Reset action so that a button can be clicked and doesn't necessarily have to time
+                    # the update frequency.
+                    action = 0
+                lastUpdateTime = time.time()
 
         pygame.display.update()
         FPSCLOCK.tick(FPS)
