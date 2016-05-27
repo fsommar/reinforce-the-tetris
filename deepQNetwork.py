@@ -13,7 +13,11 @@ import utils
 
 REPLAY_MEMORY_SIZE = 100000  # 1'000'000 in original report
 REPLAY_START_SIZE = REPLAY_MEMORY_SIZE / 20
-REPLAY_FILE = "replay_memory.dat"
+REPLAY_FILE = "potentially_large_supervised_replay_memory.dat"
+UPDATE_FREQUENCY = NETWORK_UPDATE_FREQUENCY = REPLAY_MEMORY_SIZE / 1000
+EPSILON_START = 0.15
+EPSILON_END = 0.1
+EPSILON_ANNEAL_FACTOR = 10000
 
 
 def buildNetwork() -> Sequential:
@@ -50,7 +54,6 @@ def trainOnBatch(learningNetwork: Sequential, targetNetwork: Sequential,
                 ys[i][j] = experienceTransition.reward
                 # If the game does not terminate, add value from next sequence
                 if not experienceTransition.doesTerminate():
-                    # TODO: Change to use the upcoming function in ExperienceTransition
                     fi_t_plus_one = np.roll(experienceTransition.preprocessedSequences, 1, axis=0)
                     fi_t_plus_one[0] = experienceTransition.nextSequence
                     target = max(predictOnSequence(targetNetwork, fi_t_plus_one))
@@ -97,7 +100,8 @@ class DQNData:
         compileNetwork(self.targetNetwork)
 
         self.gamma = gamma  # type: float
-        self.epsilon = 0.1  # type: float
+        self.epsilon = EPSILON_START  # type: float
+        self.trainCount = 0  # type: int
 
         self.replayMemory = loadReplaysIfExist()  # type: List[ExperienceTransition]
         self.preprocessedSequences = np.zeros((4, 20, 20), dtype=np.bool)  # type: np.ndarray
@@ -107,6 +111,7 @@ class DQNData:
             self.replays = self.replayMemory.index(None)
         except ValueError:
             pass
+        print(self.replays)
         self.prevScore = 0  # type: int
         self.prevState = np.zeros((20, 20))  # type: np.ndarray
         self.currentState = np.zeros((20, 20))  # type: np.ndarray
@@ -140,6 +145,17 @@ class DQNData:
         self.replays = (self.replays + 1) % REPLAY_MEMORY_SIZE
         self.prevScore = score
 
+        # Update the target network every UPDATE_FREQUENCY frame
+        self.trainCount = (self.trainCount + 1) % UPDATE_FREQUENCY
+        if self.trainCount == 0:
+            self.targetNetwork.set_weights(self.learningNetwork.get_weights())
+            print("Target network updated!")
+            print("epsilon is now {}".format(self.epsilon))
+
+        if self.epsilon > EPSILON_END:
+            self.epsilon -= 1 / EPSILON_ANNEAL_FACTOR
+
+
     def trainOnMiniBatch(self, miniBatch: List[ExperienceTransition]) -> None:
         trainOnBatch(self.learningNetwork, self.targetNetwork, miniBatch, self.gamma)
 
@@ -150,8 +166,6 @@ class DQNData:
         the network to predict the best action to take.
         :return: the action to perform in range [0, 3].
         """
-        # TODO: Choose random actions until replayMemory is of size REPLAY_START_SIZE
-        # TODO: Anneal epsilon over time
         if random.random() < self.epsilon:
             return random.choice(range(4))
         else:

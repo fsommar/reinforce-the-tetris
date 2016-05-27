@@ -16,8 +16,7 @@ import deepQNetwork as dqn
 
 MINI_BATCH_SIZE = 32
 NEXT_PIECE_OFFSET = (10, 5)
-NETWORK_UPDATE_FREQUENCY = 1000  # 10'000 in original report
-USER_INPUT = True
+USER_INPUT = False
 NETWORK_ARCHITECTURE_FILE = "dqn_architecture"
 NETWORK_WEIGHTS_FILE = "initial_weights"
 
@@ -263,6 +262,7 @@ def runGame(dqnData) -> int:
                 elif event.key == K_j:
                     dqnData.show()
                 elif event.key == K_k:
+                    utils.saveWeights(dqnData.learningNetwork, "saved_weights")
                     dqnData.writeReplayFile()
 
         # let the piece fall if it is time to fall
@@ -317,9 +317,8 @@ def runGame(dqnData) -> int:
                         miniBatch = random.sample(usedMemory, MINI_BATCH_SIZE)
 
                         start = time.time()
-                        # TODO: Update target network after NETWORK_UPDATE_FREQUENCY frames
                         dqnData.trainOnMiniBatch(miniBatch)
-                        print("Training on batch took {}".format(time.time() - start))
+                        #print("Training on batch took {}".format(time.time() - start))
 
                         action = dqnData.predictAction()
                     else:
