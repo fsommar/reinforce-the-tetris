@@ -18,7 +18,8 @@ MINI_BATCH_SIZE = 32
 NEXT_PIECE_OFFSET = (10, 5)
 USER_INPUT = False
 NETWORK_ARCHITECTURE_FILE = "dqn_architecture"
-NETWORK_WEIGHTS_FILE = "initial_weights"
+INITIAL_WEIGHTS_FILE = "initial_weights"
+SAVE_WEIGHTS_FILE = "saved_weights"
 
 FPS = 25
 BOXSIZE = 20
@@ -262,7 +263,7 @@ def runGame(dqnData) -> int:
                 elif event.key == K_j:
                     dqnData.show()
                 elif event.key == K_k:
-                    utils.saveWeights(dqnData.learningNetwork, "saved_weights")
+                    utils.saveWeights(dqnData.learningNetwork, SAVE_WEIGHTS_FILE, True)
                     dqnData.writeReplayFile()
 
         # let the piece fall if it is time to fall
@@ -335,11 +336,11 @@ def runGame(dqnData) -> int:
 
 def loadNetworkIfExists() -> Sequential:
     if (os.path.isfile(NETWORK_ARCHITECTURE_FILE + ".json") and
-            os.path.isfile(NETWORK_WEIGHTS_FILE + ".h5")):
+            os.path.isfile(INITIAL_WEIGHTS_FILE + ".h5")):
         print("Loaded existing architecture and weights")
-        return utils.loadArchitectureAndWeights(NETWORK_ARCHITECTURE_FILE, NETWORK_WEIGHTS_FILE)
+        return utils.loadArchitectureAndWeights(NETWORK_ARCHITECTURE_FILE, INITIAL_WEIGHTS_FILE)
     network = dqn.buildNetwork()
-    utils.saveArchitectureAndWeights(network, NETWORK_ARCHITECTURE_FILE, NETWORK_WEIGHTS_FILE)
+    utils.saveArchitectureAndWeights(network, NETWORK_ARCHITECTURE_FILE, INITIAL_WEIGHTS_FILE)
     return network
 
 
