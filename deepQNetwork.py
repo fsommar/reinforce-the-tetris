@@ -57,11 +57,13 @@ def trainOnBatch(learningNetwork: Sequential, targetNetwork: Sequential,
                     fi_t_plus_one = np.roll(experienceTransition.preprocessedSequences, 1, axis=0)
                     fi_t_plus_one[0] = experienceTransition.nextSequence
                     target = max(predictOnSequence(targetNetwork, fi_t_plus_one))
-                    ys[i][j] += gamma * target
+                    # Added arbitrary value to enable training of values that do not terminate
+                    ys[i][j] += gamma * target + 1
             else:
+                # TODO: Check if it's better to use 0 target for other actions
                 # For the other 3 actions, we don't want the network to learn anything new,
                 # but we still need to provide a target for the (supervised) training
-                ys[i][j] = max(predictOnSequence(learningNetwork, experienceTransition.preprocessedSequences))
+                ys[i][j] = 0  # max(predictOnSequence(learningNetwork, experienceTransition.preprocessedSequences))
 
     xs = np.stack(xs)
     learningNetwork.train_on_batch(xs, ys)
@@ -144,6 +146,7 @@ class DQNData:
         # Make sure not to go out of bounds in the replay memory.
         self.replays = (self.replays + 1) % REPLAY_MEMORY_SIZE
         self.prevScore = score
+        self.prevState = np.copy(self.currentState)
 
         # Update the target network every UPDATE_FREQUENCY frame
         self.trainCount = (self.trainCount + 1) % UPDATE_FREQUENCY
@@ -154,7 +157,6 @@ class DQNData:
 
         if self.epsilon > EPSILON_END:
             self.epsilon -= 1 / EPSILON_ANNEAL_FACTOR
-
 
     def trainOnMiniBatch(self, miniBatch: List[ExperienceTransition]) -> None:
         trainOnBatch(self.learningNetwork, self.targetNetwork, miniBatch, self.gamma)
