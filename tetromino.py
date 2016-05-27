@@ -15,8 +15,8 @@ import utils
 import deepQNetwork as dqn
 
 MINI_BATCH_SIZE = 32
-NEXT_PIECE_OFFSET = (10, 5)
-USER_INPUT = False
+NEXT_PIECE_OFFSET = (13, 5)
+USER_INPUT = True
 NETWORK_ARCHITECTURE_FILE = "dqn_architecture"
 INITIAL_WEIGHTS_FILE = "initial_weights"
 SAVE_WEIGHTS_FILE = "saved_weights"
@@ -189,6 +189,7 @@ def main():
             else:
                 pygame.mixer.music.load('tetrisc.mid')
             pygame.mixer.music.play(-1, 0.0)
+        pygame.mixer.music.stop()
         action = runGame(dqnData)
         # It doesn't matter what the score is as it's not kept into account when the action leads to game over.
         dqnData.update(action=action, gameOver=True)
@@ -310,6 +311,7 @@ def runGame(dqnData) -> int:
                 fillStateWith(nextPiece, offset=NEXT_PIECE_OFFSET)
 
                 dqnData.update(action=action, score=score)
+                print(len(dqnData.getFilledMemory()))
                 if not USER_INPUT:
                     usedMemory = dqnData.getFilledMemory()
                     if len(usedMemory) == 5000:
