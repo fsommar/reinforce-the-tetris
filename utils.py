@@ -20,8 +20,8 @@ def saveArchitecture(network, fileName: str):
         return False  # Save failed
 
 
-def saveWeights(network: Sequential, fileName: str):
-    network.save_weights(fileName + '.h5')
+def saveWeights(network: Sequential, fileName: str, overwrite=False):
+    network.save_weights(fileName + '.h5', overwrite)
 
 
 def saveArchitectureAndWeights(network: Sequential, architectureFileName: str, weightsFileName: str):
