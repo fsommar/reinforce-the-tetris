@@ -15,8 +15,9 @@ ARCHITECTURE_FILE = "dqn_architecture"
 INITIAL_WEIGHTS_FILE = "initial_weights"
 SAVE_WEIGHTS_FILE = "saved_weights"
 BATCH_SIZE = 32
-MAX_ITER = 100000
-SAVE_FREQUENCY = 1000
+MAX_ITER = 200000
+SAVE_FREQUENCY = 5000
+
 
 def loadNetworkIfExists() -> Sequential:
     if (os.path.isfile(ARCHITECTURE_FILE + ".json") and
@@ -34,11 +35,12 @@ def main():
     for i in range(MAX_ITER):
         miniBatch = random.sample(usedMemory, BATCH_SIZE)
         dqnData.trainOnMiniBatch(miniBatch)
-        if (i % 10) == 0:
-            print("i = {}".format(i))
+        print(i)
         if (i % SAVE_FREQUENCY) == 0:
             dqnData.targetNetwork.set_weights(dqnData.learningNetwork.get_weights())
-            utils.saveWeights(dqnData.learningNetwork, SAVE_WEIGHTS_FILE, overwrite=True)
+            save_name = "{}_{}".format(SAVE_WEIGHTS_FILE, i)
+            utils.saveWeights(dqnData.learningNetwork, save_name)
+            print("Saved weights at step {}".format(i))
 
 if __name__ == "__main__":
     main()

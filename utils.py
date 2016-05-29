@@ -6,7 +6,9 @@ import numpy as np
 def sequenceAsBatch(sequence: np.ndarray) -> np.ndarray:
     # This function converts the array have one additional index
     # Shape (4, 20, 20) -> (1, 4, 20, 20)
-    return np.stack((sequence,))
+    batch = np.stack((sequence,))
+    reduced_batch = batch[:, :, 0:10, :]
+    return reduced_batch
 
 
 def saveArchitecture(network, fileName: str):

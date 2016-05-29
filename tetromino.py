@@ -16,7 +16,7 @@ import deepQNetwork as dqn
 
 MINI_BATCH_SIZE = 32
 NEXT_PIECE_OFFSET = (13, 5)
-USER_INPUT = True
+USER_INPUT = False
 NETWORK_ARCHITECTURE_FILE = "dqn_architecture"
 INITIAL_WEIGHTS_FILE = "initial_weights"
 SAVE_WEIGHTS_FILE = "saved_weights"
@@ -311,7 +311,6 @@ def runGame(dqnData) -> int:
                 fillStateWith(nextPiece, offset=NEXT_PIECE_OFFSET)
 
                 dqnData.update(action=action, score=score)
-                print(len(dqnData.getFilledMemory()))
                 if not USER_INPUT:
                     usedMemory = dqnData.getFilledMemory()
                     if len(usedMemory) == 5000:

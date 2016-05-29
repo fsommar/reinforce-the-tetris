@@ -3,6 +3,7 @@ from typing import List
 import numpy as np
 import copy
 import os
+import time
 import random
 import pickle
 from keras.models import Sequential
@@ -15,8 +16,8 @@ REPLAY_MEMORY_SIZE = 100000  # 1'000'000 in original report
 REPLAY_START_SIZE = REPLAY_MEMORY_SIZE / 20
 REPLAY_FILE = "replay_memory.dat"
 UPDATE_FREQUENCY = NETWORK_UPDATE_FREQUENCY = REPLAY_MEMORY_SIZE / 100
-EPSILON_START = 0.15
-EPSILON_END = 0.1
+EPSILON_START = 0.5
+EPSILON_END = 0.01
 EPSILON_ANNEAL_FACTOR = 10000
 
 
@@ -27,9 +28,8 @@ def buildNetwork() -> Sequential:
     network = Sequential()
     # 3 convolutional layers, each followed by a ReLU activation
     # no. filters, filter size x, y, stride(x, y), shape(channels, x, y)
-    network.add(Convolution2D(32, 4, 4, subsample=(2, 2), activation='relu', input_shape=(4, 20, 20)))
-    network.add(Convolution2D(64, 3, 3, subsample=(1, 1), activation='relu'))
-    network.add(Convolution2D(64, 3, 3, subsample=(1, 1), activation='relu'))
+    network.add(Convolution2D(32, 3, 3, subsample=(1, 1), activation='relu', input_shape=(4, 10, 20)))
+    network.add(Convolution2D(64, 2, 2, subsample=(1, 1), activation='relu'))
     # 2 fully connected layers, the last being the classifier
     network.add(Flatten())
     network.add(Dense(512, activation='relu'))
@@ -40,6 +40,7 @@ def buildNetwork() -> Sequential:
 
 def lossFunction(y_true, y_pred):
     import theano.tensor as T
+
     return T.sqr(y_true - y_pred)
 
 
@@ -48,7 +49,7 @@ def trainOnBatch(learningNetwork: Sequential, targetNetwork: Sequential,
     ys = np.zeros(shape=(len(transitionBatch), 4))
     xs = []
     for i, experienceTransition in enumerate(transitionBatch):
-        xs.append(experienceTransition.preprocessedSequences)
+        xs.append(experienceTransition.preprocessedSequences[:, 0:10, :])
         for j in range(4):
             if j == experienceTransition.action:
                 ys[i][j] = experienceTransition.reward
@@ -57,8 +58,7 @@ def trainOnBatch(learningNetwork: Sequential, targetNetwork: Sequential,
                     fi_t_plus_one = np.roll(experienceTransition.preprocessedSequences, 1, axis=0)
                     fi_t_plus_one[0] = experienceTransition.nextSequence
                     target = max(predictOnSequence(targetNetwork, fi_t_plus_one))
-                    # Added arbitrary value to enable training of values that do not terminate
-                    ys[i][j] += gamma * target + 1
+                    ys[i][j] += gamma * target
             else:
                 # TODO: Check if it's better to use 0 target for other actions
                 # For the other 3 actions, we don't want the network to learn anything new,
@@ -75,14 +75,18 @@ def predictOnSequence(network: Sequential, sequence: np.ndarray) -> List[float]:
 
 def predictBestAction(network: Sequential, sequence: np.ndarray) -> int:
     return np.argmax(predictOnSequence(network, sequence))
+    # The below is used to compare the different action values
+    ret = predictOnSequence(network, sequence)
+    print(ret)
+    return np.argmax(ret)
 
 
 def compileNetwork(network: Sequential, learningRate: float = 0.00025, rho: float = 0.95):
     network.compile(optimizer=RMSprop(lr=learningRate, rho=rho), loss=lossFunction)
     # These two calls take some seconds to perform,
     # because the first predict and train calls take longer time.
-    network.predict_on_batch(np.zeros(shape=(1, 4, 20, 20)))
-    network.train_on_batch(np.zeros(shape=(1, 4, 20, 20)), np.zeros(shape=(1, 4)))
+    network.predict_on_batch(np.zeros(shape=(1, 4, 10, 20)))
+    network.train_on_batch(np.zeros(shape=(1, 4, 10, 20)), np.zeros(shape=(1, 4)))
 
 
 def loadReplaysIfExist() -> List[ExperienceTransition]:
@@ -113,10 +117,13 @@ class DQNData:
             self.replays = self.replayMemory.index(None)
         except ValueError:
             pass
-        print(self.replays)
+        print("Starting at replay {}".format(self.replays))
         self.prevScore = 0  # type: int
         self.prevState = np.zeros((20, 20))  # type: np.ndarray
         self.currentState = np.zeros((20, 20))  # type: np.ndarray
+
+        self.startTime = time.time()
+        self.saveCount = 0
 
     def update(self, action: int, score: int = 0, gameOver: bool = False) -> None:
         # Roll the channels (the first dimension in the shape) to make place for the latest state.
@@ -154,7 +161,11 @@ class DQNData:
             self.targetNetwork.set_weights(self.learningNetwork.get_weights())
             print("Target network updated!")
             print("epsilon is now {}".format(self.epsilon))
-
+            self.saveCount += 1
+            if self.saveCount == 10:
+                print("We are at {}, we save at 10".format(self.saveCount))
+                self.saveCount = 0
+                utils.saveWeights(self.learningNetwork, "saved_weights_{}".format(time.time() - self.startTime))
         if self.epsilon > EPSILON_END:
             self.epsilon -= 1 / EPSILON_ANNEAL_FACTOR
 
@@ -188,12 +199,12 @@ class DQNData:
         # When matplotlib shows the window with the array, it crashes internally (at least on OS X).
         # The windows are still opened but the game does not continue running.
         _, axes = plt.subplots(2, 2, sharey='row', sharex='col')
-        axes[(0, 0)].imshow(self.preprocessedSequences[0].T, cmap='Greys', interpolation='nearest')
+        axes[(0, 0)].imshow(self.preprocessedSequences[0, :10, :].T, cmap='Greys', interpolation='nearest')
         axes[0, 0].set_title("$t_0$")
-        axes[0, 1].imshow(self.preprocessedSequences[1].T, cmap='Greys', interpolation='nearest')
+        axes[0, 1].imshow(self.preprocessedSequences[1, :10, :].T, cmap='Greys', interpolation='nearest')
         axes[0, 1].set_title("$t_{-1}$")
-        axes[1, 0].imshow(self.preprocessedSequences[2].T, cmap='Greys', interpolation='nearest')
+        axes[1, 0].imshow(self.preprocessedSequences[2, :10, :].T, cmap='Greys', interpolation='nearest')
         axes[1, 0].set_title("$t_{-2}$")
-        axes[1, 1].imshow(self.preprocessedSequences[3].T, cmap='Greys', interpolation='nearest')
+        axes[1, 1].imshow(self.preprocessedSequences[3, :10, :].T, cmap='Greys', interpolation='nearest')
         axes[1, 1].set_title("$t_{-3}$")
         plt.show()

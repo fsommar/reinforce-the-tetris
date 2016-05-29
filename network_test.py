@@ -10,7 +10,8 @@ import deepQNetwork as dqn
 import utils
 
 ARCHITECTURE_FILE = "test_architecture"
-INITIAL_WEIGHTS_FILE = "saved_weights.h5"
+INITIAL_WEIGHTS_FILE = "initial_weights"
+SAVE_WEIGHTS_FILE = "saved_weights"
 
 network = dqn.buildNetwork()
 network.load_weights(INITIAL_WEIGHTS_FILE)
