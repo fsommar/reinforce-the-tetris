@@ -35,12 +35,13 @@ def main():
     for i in range(MAX_ITER):
         miniBatch = random.sample(usedMemory, BATCH_SIZE)
         dqnData.trainOnMiniBatch(miniBatch)
-        print(i)
-        if (i % SAVE_FREQUENCY) == 0:
-            dqnData.targetNetwork.set_weights(dqnData.learningNetwork.get_weights())
+        if i % SAVE_FREQUENCY == 0:
+            #dqnData.targetNetwork.set_weights(dqnData.learningNetwork.get_weights())
             save_name = "{}_{}".format(SAVE_WEIGHTS_FILE, i)
             utils.saveWeights(dqnData.learningNetwork, save_name)
             print("Saved weights at step {}".format(i))
+        elif i % 50 == 0:
+            print("We are at step {}".format(i))
 
 if __name__ == "__main__":
     main()

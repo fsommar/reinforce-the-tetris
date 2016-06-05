@@ -16,8 +16,8 @@ REPLAY_MEMORY_SIZE = 100000  # 1'000'000 in original report
 REPLAY_START_SIZE = REPLAY_MEMORY_SIZE / 20
 REPLAY_FILE = "replay_memory.dat"
 UPDATE_FREQUENCY = NETWORK_UPDATE_FREQUENCY = REPLAY_MEMORY_SIZE / 100
-EPSILON_START = 0.5
-EPSILON_END = 0.01
+EPSILON_START = 0.0
+EPSILON_END = 0.00
 EPSILON_ANNEAL_FACTOR = 10000
 
 
@@ -28,7 +28,8 @@ def buildNetwork() -> Sequential:
     network = Sequential()
     # 3 convolutional layers, each followed by a ReLU activation
     # no. filters, filter size x, y, stride(x, y), shape(channels, x, y)
-    network.add(Convolution2D(32, 3, 3, subsample=(1, 1), activation='relu', input_shape=(4, 10, 20)))
+    network.add(Convolution2D(32, 4, 4, subsample=(1, 1), activation='relu', input_shape=(4, 10, 20)))
+    network.add(Convolution2D(32, 3, 3, subsample=(1, 1), activation='relu'))
     network.add(Convolution2D(64, 2, 2, subsample=(1, 1), activation='relu'))
     # 2 fully connected layers, the last being the classifier
     network.add(Flatten())
@@ -51,19 +52,10 @@ def trainOnBatch(learningNetwork: Sequential, targetNetwork: Sequential,
     for i, experienceTransition in enumerate(transitionBatch):
         xs.append(experienceTransition.preprocessedSequences[:, 0:10, :])
         for j in range(4):
-            if j == experienceTransition.action:
-                ys[i][j] = experienceTransition.reward
-                # If the game does not terminate, add value from next sequence
-                if not experienceTransition.doesTerminate():
-                    fi_t_plus_one = np.roll(experienceTransition.preprocessedSequences, 1, axis=0)
-                    fi_t_plus_one[0] = experienceTransition.nextSequence
-                    target = max(predictOnSequence(targetNetwork, fi_t_plus_one))
-                    ys[i][j] += gamma * target
+            if j == experienceTransition.action and not experienceTransition.doesTerminate():
+                ys[i][j] = 1
             else:
-                # TODO: Check if it's better to use 0 target for other actions
-                # For the other 3 actions, we don't want the network to learn anything new,
-                # but we still need to provide a target for the (supervised) training
-                ys[i][j] = 0  # max(predictOnSequence(learningNetwork, experienceTransition.preprocessedSequences))
+                ys[i][j] = 0
 
     xs = np.stack(xs)
     learningNetwork.train_on_batch(xs, ys)

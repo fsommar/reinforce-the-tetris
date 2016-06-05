@@ -18,7 +18,7 @@ MINI_BATCH_SIZE = 32
 NEXT_PIECE_OFFSET = (13, 5)
 USER_INPUT = False
 NETWORK_ARCHITECTURE_FILE = "dqn_architecture"
-INITIAL_WEIGHTS_FILE = "initial_weights"
+INITIAL_WEIGHTS_FILE = "saved_weights_35000"
 SAVE_WEIGHTS_FILE = "saved_weights"
 
 FPS = 25
@@ -319,7 +319,7 @@ def runGame(dqnData) -> int:
                         miniBatch = random.sample(usedMemory, MINI_BATCH_SIZE)
 
                         start = time.time()
-                        dqnData.trainOnMiniBatch(miniBatch)
+                        #dqnData.trainOnMiniBatch(miniBatch)
                         #print("Training on batch took {}".format(time.time() - start))
 
                         action = dqnData.predictAction()
