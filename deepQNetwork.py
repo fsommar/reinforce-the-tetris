@@ -16,7 +16,7 @@ REPLAY_START_SIZE = REPLAY_MEMORY_SIZE / 20
 REPLAY_FILE = "replay_memory.dat"
 UPDATE_FREQUENCY = NETWORK_UPDATE_FREQUENCY = REPLAY_MEMORY_SIZE / 100
 EPSILON_START = 0.15
-EPSILON_END = 0.1
+EPSILON_END = 0
 EPSILON_ANNEAL_FACTOR = 10000
 
 
@@ -57,8 +57,7 @@ def trainOnBatch(learningNetwork: Sequential, targetNetwork: Sequential,
                     fi_t_plus_one = np.roll(experienceTransition.preprocessedSequences, 1, axis=0)
                     fi_t_plus_one[0] = experienceTransition.nextSequence
                     target = max(predictOnSequence(targetNetwork, fi_t_plus_one))
-                    # Added arbitrary value to enable training of values that do not terminate
-                    ys[i][j] += gamma * target + 1
+                    ys[i][j] += gamma * target
             else:
                 # TODO: Check if it's better to use 0 target for other actions
                 # For the other 3 actions, we don't want the network to learn anything new,
@@ -131,7 +130,7 @@ class DQNData:
             # The action taken lead to a game over.
             self.replayMemory[self.replays] = ExperienceTransition(pps,
                                                                    action=action,
-                                                                   reward=0,
+                                                                   reward=-1,
                                                                    # A nextSequence of None indicates a game over.
                                                                    nextSequence=None)
         else:

@@ -16,7 +16,7 @@ import deepQNetwork as dqn
 
 MINI_BATCH_SIZE = 32
 NEXT_PIECE_OFFSET = (13, 5)
-USER_INPUT = True
+USER_INPUT = False
 NETWORK_ARCHITECTURE_FILE = "dqn_architecture"
 INITIAL_WEIGHTS_FILE = "initial_weights"
 SAVE_WEIGHTS_FILE = "saved_weights"
@@ -180,7 +180,7 @@ def main():
     BIGFONT = pygame.font.Font('freesansbold.ttf', 100)
     pygame.display.set_caption('Tetromino')
 
-    showTextScreen('Tetromino')
+    # showTextScreen('Tetromino')
     dqnData = dqn.DQNData(learningNetwork=loadNetworkIfExists())
     while True:  # game loop
         if USER_INPUT:
@@ -191,11 +191,9 @@ def main():
             pygame.mixer.music.play(-1, 0.0)
         pygame.mixer.music.stop()
         action = runGame(dqnData)
-        # It doesn't matter what the score is as it's not kept into account when the action leads to game over.
         dqnData.update(action=action, gameOver=True)
         if USER_INPUT:
             pygame.mixer.music.stop()
-            # showTextScreen('Game Over')
 
 
 def runGame(dqnData) -> int:
